@@ -1,0 +1,38 @@
+name: Update Samsung Gap Data
+
+on:
+  schedule:
+    # 장 중 30분 간격 (KST 09:00~15:30 = UTC 00:00~06:30), 평일
+    - cron: "0 0-6 * * 1-5"
+    - cron: "30 0-5 * * 1-5"
+    # 장 마감 후 최종 업데이트 (UTC 07:00 = KST 16:00)
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install yfinance
+
+      - name: Fetch data
+        run: python fetch_data.py
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json
+          git diff --staged --quiet || git commit -m "data: samsung gap $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push

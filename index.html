@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>삼성전자 우선주 괴리율</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .val-up { color: #f87171; }
+    .val-dn { color: #60a5fa; }
+    .val-neu { color: #94a3b8; }
+    .gap-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 99px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .spinner {
+      border: 3px solid #334155;
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      width: 32px; height: 32px;
+      animation: spin 0.8s linear infinite;
+      margin: 60px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+  <!-- 헤더 -->
+  <div class="max-w-5xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">삼성전자 우선주 괴리율</h1>
+        <p class="text-slate-400 text-sm mt-1">
+          005930 (보통주) vs 005935 (우선주) &nbsp;·&nbsp;
+          괴리율 = (보통주 − 우선주) / 보통주 × 100
+        </p>
+      </div>
+      <div class="text-right">
+        <div id="updated" class="text-slate-500 text-xs">데이터 로딩 중...</div>
+        <button onclick="loadData()" class="mt-1 text-xs text-blue-400 hover:text-blue-300 underline">새로고침</button>
+      </div>
+    </div>
+
+    <!-- 현재 수치 카드 -->
+    <div id="stat-section" class="hidden">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="card p-4">
+          <div class="text-slate-400 text-xs mb-1">삼성전자 (보통주)</div>
+          <div id="s-common" class="text-xl font-bold text-white">—</div>
+          <div class="text-xs text-slate-500 mt-0.5">005930.KS</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-slate-400 text-xs mb-1">삼성전자우 (우선주)</div>
+          <div id="s-pref" class="text-xl font-bold text-white">—</div>
+          <div class="text-xs text-slate-500 mt-0.5">005935.KS</div>
+        </div>
+        <div class="card p-4 border-blue-500/40">
+          <div class="text-slate-400 text-xs mb-1">현재 괴리율</div>
+          <div id="s-gap" class="text-2xl font-bold">—</div>
+          <div class="text-xs text-slate-500 mt-0.5">보통주 기준 할인율</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-slate-400 text-xs mb-1">1년 괴리율 범위</div>
+          <div id="s-range" class="text-sm font-semibold text-white">—</div>
+          <div id="s-avg" class="text-xs text-slate-400 mt-1">평균: —</div>
+        </div>
+      </div>
+
+      <!-- 차트 -->
+      <div class="card p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-slate-300">괴리율 추이 (1년)</h2>
+          <div class="flex gap-2">
+            <button onclick="setRange(30)"  id="btn-30"  class="range-btn px-3 py-1 text-xs rounded-full border border-slate-600 text-slate-400 hover:text-white">1개월</button>
+            <button onclick="setRange(90)"  id="btn-90"  class="range-btn px-3 py-1 text-xs rounded-full border border-slate-600 text-slate-400 hover:text-white">3개월</button>
+            <button onclick="setRange(180)" id="btn-180" class="range-btn px-3 py-1 text-xs rounded-full border border-slate-600 text-slate-400 hover:text-white">6개월</button>
+            <button onclick="setRange(0)"   id="btn-all" class="range-btn px-3 py-1 text-xs rounded-full border border-blue-500 text-blue-400">전체</button>
+          </div>
+        </div>
+        <div style="height:280px; position:relative;">
+          <canvas id="gapChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 가격 차트 -->
+      <div class="card p-5 mb-6">
+        <h2 class="text-sm font-semibold text-slate-300 mb-4">주가 비교 (1년)</h2>
+        <div style="height:240px; position:relative;">
+          <canvas id="priceChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 최근 30일 테이블 -->
+      <div class="card p-5">
+        <h2 class="text-sm font-semibold text-slate-300 mb-4">최근 30일</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-slate-400 border-b border-slate-700">
+                <th class="text-left py-2 pr-4">날짜</th>
+                <th class="text-right py-2 pr-4">보통주</th>
+                <th class="text-right py-2 pr-4">우선주</th>
+                <th class="text-right py-2 pr-4">괴리율</th>
+                <th class="text-right py-2">차이 (원)</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 로딩 -->
+    <div id="loading"><div class="spinner"></div></div>
+
+    <!-- 에러 -->
+    <div id="error" class="hidden text-center text-slate-400 py-20">
+      데이터를 불러올 수 없습니다.<br>
+      <span class="text-xs">GitHub Actions가 아직 실행되지 않았거나 네트워크 오류입니다.</span>
+    </div>
+  </div>
+
+<script>
+let allHistory = [];
+let gapChart = null;
+let priceChart = null;
+let activeRange = 0;
+
+async function loadData() {
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('stat-section').classList.add('hidden');
+  document.getElementById('error').classList.add('hidden');
+
+  try {
+    const res = await fetch(`data/prices.json?t=${Date.now()}`);
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+
+    if (!data.history || data.history.length === 0) throw new Error('empty data');
+
+    allHistory = data.history;
+    renderStats(data);
+    renderTable(allHistory.slice(-30).reverse());
+    renderCharts(allHistory);
+    setRange(activeRange);
+
+    const dt = new Date(data.updated_at);
+    const kst = new Date(dt.getTime() + 9 * 3600 * 1000);
+    document.getElementById('updated').textContent =
+      '업데이트: ' + kst.toISOString().replace('T', ' ').slice(0, 16) + ' KST';
+
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('stat-section').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error').classList.remove('hidden');
+    console.error(e);
+  }
+}
+
+function fmt(n) {
+  return n.toLocaleString('ko-KR') + '원';
+}
+
+function gapColor(gap) {
+  if (gap > 15) return '#f87171';
+  if (gap > 10) return '#fb923c';
+  if (gap > 5)  return '#facc15';
+  return '#60a5fa';
+}
+
+function renderStats(data) {
+  const { current, stats } = data;
+  document.getElementById('s-common').textContent = fmt(current.common);
+  document.getElementById('s-pref').textContent   = fmt(current.pref);
+
+  const gapEl = document.getElementById('s-gap');
+  const g = current.gap;
+  gapEl.textContent = g.toFixed(2) + '%';
+  gapEl.style.color = gapColor(g);
+
+  document.getElementById('s-range').innerHTML =
+    `<span style="color:#60a5fa">${stats.gap_min.toFixed(2)}%</span>` +
+    ` ~ <span style="color:#f87171">${stats.gap_max.toFixed(2)}%</span>`;
+  document.getElementById('s-avg').textContent = `평균: ${stats.gap_avg.toFixed(2)}%`;
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = rows.map(r => {
+    const diff = r.common - r.pref;
+    const color = gapColor(r.gap);
+    return `<tr class="hover:bg-slate-800/50">
+      <td class="py-2 pr-4 text-slate-400">${r.date}</td>
+      <td class="py-2 pr-4 text-right">${r.common.toLocaleString()}</td>
+      <td class="py-2 pr-4 text-right">${r.pref.toLocaleString()}</td>
+      <td class="py-2 pr-4 text-right font-semibold" style="color:${color}">${r.gap.toFixed(2)}%</td>
+      <td class="py-2 text-right text-slate-400">${diff.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sliceHistory(n) {
+  if (n === 0) return allHistory;
+  return allHistory.slice(-n);
+}
+
+function setRange(n) {
+  activeRange = n;
+  ['30','90','180','all'].forEach(id => {
+    const el = document.getElementById(`btn-${id}`);
+    el.className = 'range-btn px-3 py-1 text-xs rounded-full border border-slate-600 text-slate-400 hover:text-white';
+  });
+  const activeId = n === 0 ? 'btn-all' : `btn-${n}`;
+  document.getElementById(activeId).className =
+    'range-btn px-3 py-1 text-xs rounded-full border border-blue-500 text-blue-400';
+
+  const rows = sliceHistory(n);
+  updateGapChart(rows);
+  updatePriceChart(rows);
+}
+
+function renderCharts(rows) {
+  const gapCtx   = document.getElementById('gapChart').getContext('2d');
+  const priceCtx = document.getElementById('priceChart').getContext('2d');
+
+  const commonOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+    scales: {
+      x: {
+        type: 'time',
+        time: { unit: 'month', displayFormats: { month: 'yy.MM', day: 'MM.dd' } },
+        ticks: { color: '#64748b', maxTicksLimit: 8 },
+        grid: { color: '#1e293b' },
+      },
+      y: {
+        ticks: { color: '#64748b' },
+        grid: { color: '#1e293b' },
+      },
+    },
+  };
+
+  gapChart = new Chart(gapCtx, {
+    type: 'line',
+    data: { datasets: [buildGapDataset(rows)] },
+    options: {
+      ...commonOpts,
+      plugins: {
+        ...commonOpts.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ` 괴리율: ${ctx.parsed.y.toFixed(2)}%`
+          }
+        }
+      },
+      scales: {
+        ...commonOpts.scales,
+        y: {
+          ...commonOpts.scales.y,
+          ticks: {
+            color: '#64748b',
+            callback: v => v.toFixed(1) + '%',
+          },
+        },
+      },
+    },
+  });
+
+  priceChart = new Chart(priceCtx, {
+    type: 'line',
+    data: { datasets: buildPriceDatasets(rows) },
+    options: {
+      ...commonOpts,
+      plugins: {
+        ...commonOpts.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}원`
+          }
+        }
+      },
+      scales: {
+        ...commonOpts.scales,
+        y: {
+          ...commonOpts.scales.y,
+          ticks: {
+            color: '#64748b',
+            callback: v => (v / 1000).toFixed(0) + 'K',
+          },
+        },
+      },
+    },
+  });
+}
+
+function buildGapDataset(rows) {
+  return {
+    label: '괴리율 (%)',
+    data: rows.map(r => ({ x: r.date, y: r.gap })),
+    borderColor: '#60a5fa',
+    backgroundColor: 'rgba(96,165,250,0.08)',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.3,
+    fill: true,
+  };
+}
+
+function buildPriceDatasets(rows) {
+  return [
+    {
+      label: '보통주 (005930)',
+      data: rows.map(r => ({ x: r.date, y: r.common })),
+      borderColor: '#f87171',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.2,
+    },
+    {
+      label: '우선주 (005935)',
+      data: rows.map(r => ({ x: r.date, y: r.pref })),
+      borderColor: '#34d399',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.2,
+    },
+  ];
+}
+
+function updateGapChart(rows) {
+  if (!gapChart) return;
+  gapChart.data.datasets[0] = buildGapDataset(rows);
+  const unit = rows.length <= 45 ? 'day' : 'month';
+  gapChart.options.scales.x.time.unit = unit;
+  gapChart.update();
+}
+
+function updatePriceChart(rows) {
+  if (!priceChart) return;
+  priceChart.data.datasets = buildPriceDatasets(rows);
+  const unit = rows.length <= 45 ? 'day' : 'month';
+  priceChart.options.scales.x.time.unit = unit;
+  priceChart.update();
+}
+
+loadData();
+</script>
+</body>
+</html>
