@@ -7,7 +7,7 @@ COMMON = "005930.KS"
 PREF = "005935.KS"
 
 def get_close(ticker: str):
-    df = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
+    df = yf.download(ticker, period="10y", interval="1d", auto_adjust=True, progress=False)
     close = df["Close"]
     if hasattr(close, "squeeze"):
         close = close.squeeze()
