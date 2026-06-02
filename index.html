@@ -59,7 +59,7 @@
       <div class="card p-4 border-blue-500/40">
         <div class="text-slate-400 text-xs mb-1 flex items-center gap-1">
           현재 괴리율
-          <span id="live-badge" class="hidden text-green-400 text-xs font-bold">● 실시간</span>
+          <span id="freshness-badge" class="text-slate-500 text-xs"></span>
         </div>
         <div id="s-gap" class="text-2xl font-bold">—</div>
         <div class="text-xs text-slate-500 mt-0.5">보통주 기준 할인율</div>
@@ -150,31 +150,27 @@ function toKST(isoStr) {
     .toISOString().replace('T', ' ').slice(0, 16) + ' KST';
 }
 
-/* ── 실시간 가격 조회 (Yahoo Finance) ── */
-async function fetchLivePrices() {
-  const url = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=005930.KS,005935.KS';
-  const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const j = await r.json();
-  const results = j.quoteResponse?.result ?? [];
-  const common = results.find(q => q.symbol === '005930.KS');
-  const pref   = results.find(q => q.symbol === '005935.KS');
-  if (!common || !pref) throw new Error('no data');
-  return { common: common.regularMarketPrice, pref: pref.regularMarketPrice };
+/* ── 경과 시간 표시 ── */
+function minutesAgo(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 60000);
+  if (diff < 1)  return '방금 전';
+  if (diff < 60) return `${diff}분 전`;
+  const h = Math.floor(diff / 60);
+  return `${h}시간 전`;
 }
 
-/* ── 현재가 카드만 업데이트 ── */
-function updateCurrentCards(commonPrice, prefPrice, isLive) {
+/* ── 현재가 카드 업데이트 ── */
+function updateCurrentCards(commonPrice, prefPrice, updatedAt) {
   document.getElementById('s-common').textContent = fmt(commonPrice);
   document.getElementById('s-pref').textContent   = fmt(prefPrice);
 
   const gap = (commonPrice - prefPrice) / commonPrice * 100;
   const gapEl = document.getElementById('s-gap');
-  gapEl.textContent   = gap.toFixed(2) + '%';
-  gapEl.style.color   = gapColor(gap);
+  gapEl.textContent = gap.toFixed(2) + '%';
+  gapEl.style.color = gapColor(gap);
 
-  const badge = document.getElementById('live-badge');
-  badge.classList.toggle('hidden', !isLive);
+  document.getElementById('freshness-badge').textContent = minutesAgo(updatedAt);
+  document.getElementById('updated').textContent = '기준: ' + toKST(updatedAt);
 }
 
 /* ── 새로고침 버튼 핸들러 ── */
@@ -184,22 +180,13 @@ async function refreshCurrentPrices() {
   btn.textContent = '갱신 중...';
   btn.classList.add('pulse');
 
-  let isLive = false;
   try {
-    const live = await fetchLivePrices();
-    updateCurrentCards(live.common, live.pref, true);
-    isLive = true;
-    document.getElementById('updated').textContent = '실시간 · ' + new Date().toLocaleTimeString('ko-KR');
+    const r = await fetch(`data/prices.json?t=${Date.now()}`);
+    if (!r.ok) throw new Error('fetch failed');
+    const data = await r.json();
+    updateCurrentCards(data.current.common, data.current.pref, data.updated_at);
   } catch (_) {
-    /* CORS 실패 → prices.json 재로드 */
-    try {
-      const r = await fetch(`data/prices.json?t=${Date.now()}`);
-      const data = await r.json();
-      updateCurrentCards(data.current.common, data.current.pref, false);
-      document.getElementById('updated').textContent = '캐시 · ' + toKST(data.updated_at);
-    } catch (__) {
-      document.getElementById('updated').textContent = '갱신 실패';
-    }
+    document.getElementById('updated').textContent = '갱신 실패 — 잠시 후 다시 시도';
   }
 
   btn.disabled = false;
@@ -222,9 +209,8 @@ async function loadData() {
     allHistory = data.history;
 
     /* 통계 카드 */
-    updateCurrentCards(data.current.common, data.current.pref, false);
+    updateCurrentCards(data.current.common, data.current.pref, data.updated_at);
     renderStatsCard(data.stats);
-    document.getElementById('updated').textContent = '업데이트: ' + toKST(data.updated_at);
 
     /* 테이블 */
     renderTable(allHistory.slice(-30).reverse());
@@ -235,12 +221,6 @@ async function loadData() {
 
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('stat-section').classList.remove('hidden');
-
-    /* 실시간 가격 시도 (비동기, 실패해도 무시) */
-    fetchLivePrices().then(live => {
-      updateCurrentCards(live.common, live.pref, true);
-      document.getElementById('updated').textContent = '실시간 · ' + new Date().toLocaleTimeString('ko-KR');
-    }).catch(() => {});
 
   } catch (e) {
     document.getElementById('loading').classList.add('hidden');

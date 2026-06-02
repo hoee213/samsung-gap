@@ -2,9 +2,8 @@ name: Update Samsung Gap Data
 
 on:
   schedule:
-    # 장 중 30분 간격 (KST 09:00~15:30 = UTC 00:00~06:30), 평일
-    - cron: "0 0-6 * * 1-5"
-    - cron: "30 0-5 * * 1-5"
+    # 장 중 5분 간격 (KST 09:00~15:30 = UTC 00:00~06:30), 평일
+    - cron: "*/5 0-6 * * 1-5"
     # 장 마감 후 최종 업데이트 (UTC 07:00 = KST 16:00)
     - cron: "0 7 * * 1-5"
   workflow_dispatch:
